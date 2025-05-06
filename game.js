@@ -11,9 +11,8 @@ const tileSize = 40;
 const gravity = 0.5;
 const jumpForce = -10;
 
-// SOUNDS
-const attackSound = new Audio("sounds/effects/playerSwing.wav");
-const hitSound = new Audio("sounds/effects/enemyHit.wav");
+let selectedInventoryIndex = 0;
+let itemInfoActive = false;
 
 const solidTiles = ["G1", "S1", "TR"];
 
@@ -98,10 +97,6 @@ const player = {
     state: "idle",      // 'idle', 'run', 'jump'
     frameIndex: 0,
     frameTimer: 0,
-    attacking: false,
-    attackTimer: 0,
-    attackPower: 1,
-    hitEnemies: [],
     health: 100,       // 0–100
     maxHealth: 100,
     stamina: 100,      // 0–100
@@ -141,88 +136,158 @@ const playerSprites = {
   idle: [loadImage("images/player/idle1.png"), loadImage("images/player/idle2.png")],
   run: [loadImage("images/player/run1.png"), loadImage("images/player/run2.png"), loadImage("images/player/run3.png")],
   jump: [loadImage("images/player/jump.png")],
-  attack: [loadImage("images/player/attack1.png"), loadImage("images/player/attack2.png")]
 };
 
 //------------------------------Spiller SLUTT------------------------------
 
+//------------------------------Items/inventory------------------------------
 
-//---------------------------------ENEMIES------------------------------
+let inventoryActive = false;
 
-const enemySprite = loadImage("images/enemy/jump.png"); // legg bildet i denne banen
-
-const enemies = [
-  createEnemy(400, 400),
-  createEnemy(500, 400),
-
+const playerInventory = [
+  "fishDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
+  "landDefault",
 ];
 
-function createEnemy(x, y) {
-  return {
-    x,
-    y,
-    width: 50,
-    height: 60,
-    xSpeed: 1.2,
-    direction: "left",
-    health: 10,
-    maxHealth: 10,
-    grounded: false,
-    alive: true
-  };
-}
+const items = {
+  fishDefault: {
+    name: "fish",
+    type: "fish",
+    rarity: "common",
+    icon: loadImage("images/items/defaultFish.png")
+  },
+  landDefault: {
+    name: "animal",
+    type: "animal",
+    rarity: "uncommon",
+    icon: loadImage("images/items/defaultTree.png")
+  },
+};
 
-function drawEnemies() {
-  for (const enemy of enemies) {
-    if (!enemy.alive) continue;
+function drawInventory() {
+  const gridCols = 6;
+  const cellSize = 80;
+  const spacing = 24;
 
-    const drawX = enemy.x - camera.x;
-    const drawY = enemy.y - camera.y;
+  const padding = 40;
+  const panelWidth = canvas.width;
+  const panelHeight = canvas.height;
 
-    // Tegn helsebar over fiende
-    const healthPercent = enemy.health / enemy.maxHealth;
-    ctx.fillStyle = "#f00";
-    ctx.fillRect(drawX, drawY - 10, enemy.width * healthPercent, 5);
-    ctx.strokeStyle = "#000";
-    ctx.strokeRect(drawX, drawY - 10, enemy.width, 5);
+  const startX = padding;
+  const startY = padding + 50;
 
-    // Tegn sprite
-    ctx.drawImage(enemySprite, drawX, drawY, enemy.width, enemy.height);
-  }
-}
+  const itemsPerRow = gridCols;
+  const rows = Math.ceil(playerInventory.length / itemsPerRow);
 
-function updateEnemies() {
-  for (const enemy of enemies) {
-    if (!enemy.alive) continue;
+  // Bakgrunn
+  ctx.fillStyle = "rgba(0,0,0,0.95)";
+  ctx.fillRect(0, 0, panelWidth, panelHeight);
 
-    // Tyngdekraft
-    enemy.ySpeed = (enemy.ySpeed || 0) + gravity;
-    enemy.y += enemy.ySpeed;
+  // Tittel
+  ctx.fillStyle = "#fff";
+  ctx.font = "32px sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillText("Inventory", panelWidth / 2, 50);
 
-    // Bevegelse
-    enemy.x += enemy.direction === "left" ? -enemy.xSpeed : enemy.xSpeed;
+  // Grid
+  ctx.textAlign = "left";
+  for (let i = 0; i < playerInventory.length; i++) {
+    const itemId = playerInventory[i];
+    const item = items[itemId];
+    if (!item) continue;
 
-    // Enkel "vegg"-kollisjon med tiles
-    const frontX = enemy.direction === "right" ? enemy.x + enemy.width : enemy.x - 1;
-    const tileFront = isSolid(frontX, enemy.y + enemy.height - 1);
+    const col = i % itemsPerRow;
+    const row = Math.floor(i / itemsPerRow);
 
-    if (tileFront) {
-      enemy.direction = enemy.direction === "right" ? "left" : "right";
+    const x = startX + col * (cellSize + spacing);
+    const y = startY + row * (cellSize + spacing);
+
+    // Rarity-farge
+    const rarityColor = {
+      common: "#aaa",
+      uncommon: "#2ecc71",
+      rare: "#3498db",
+      legendary: "#e67e22"
+    }[item.rarity] || "#fff";
+
+    // Ramme og boks
+    ctx.fillStyle = rarityColor;
+    ctx.fillRect(x - 2, y - 2, cellSize + 4, cellSize + 4);
+
+    ctx.fillStyle = "#222";
+    ctx.fillRect(x, y, cellSize, cellSize);
+
+      // Highlight item hvis valgt
+    if (i === selectedInventoryIndex) {
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(x - 4, y - 4, cellSize + 8, cellSize + 8);
     }
 
-    // Fallkollisjon
-    if (checkCollision(enemy)) {
-      enemy.y = Math.floor((enemy.y + enemy.height) / tileSize) * tileSize - enemy.height - 0.01;
-      enemy.ySpeed = 0;
-      enemy.grounded = true;
-    } else {
-      enemy.grounded = false;
+    // Icon
+    if (item.icon && item.icon.complete) {
+      ctx.drawImage(item.icon, x + 8, y + 8, cellSize - 16, cellSize - 16);
     }
+
+    // Navn
+    ctx.font = "14px sans-serif";
+    ctx.fillStyle = "#fff";
   }
+
+  ctx.textAlign = "left"; // reset text align
+}
+
+function drawItemInfo() {
+  const itemId = playerInventory[selectedInventoryIndex];
+  const item = items[itemId];
+  if (!item) return;
+
+  const panelWidth = 300;
+  const panelHeight = 180;
+  const x = canvas.width / 2 - panelWidth / 2;
+  const y = canvas.height / 2 - panelHeight / 2;
+
+  ctx.fillStyle = "rgba(0, 0, 0, 0.9)";
+  ctx.fillRect(x, y, panelWidth, panelHeight);
+
+  ctx.strokeStyle = "#fff";
+  ctx.strokeRect(x, y, panelWidth, panelHeight);
+
+  ctx.fillStyle = "#fff";
+  ctx.font = "20px sans-serif";
+  ctx.fillText(item.name, x + 20, y + 40);
+
+  ctx.font = "16px sans-serif";
+  ctx.fillText("Type: " + item.type, x + 20, y + 80);
+  ctx.fillText("Rarity: " + item.rarity, x + 20, y + 110);
+
+  if (item.icon && item.icon.complete) {
+    ctx.drawImage(item.icon, x + panelWidth - 80, y + 20, 48, 48);
+  }
+
+  ctx.font = "14px sans-serif";
+  ctx.fillStyle = "#ccc";
+  ctx.fillText("Press O to go back", x + 20, y + panelHeight - 20);
 }
 
 
-//---------------------------------ENEMIES SLUTT------------------------------
+
+//------------------------------Items/inventory SLUTT------------------------------
 
   
 function loadImage(src) {
@@ -260,6 +325,20 @@ document.addEventListener("keydown", (e) => {
     }
 
     return; // Ikke gå videre til spillkontroll
+  }
+
+  if (inventoryActive) {
+    if (e.repeat) return;
+  
+    const cols = 6;
+    const total = playerInventory.length;
+  
+    if (e.code === "ArrowRight") selectedInventoryIndex = (selectedInventoryIndex + 1) % total;
+    if (e.code === "ArrowLeft") selectedInventoryIndex = (selectedInventoryIndex - 1 + total) % total;
+    if (e.code === "ArrowDown") selectedInventoryIndex = (selectedInventoryIndex + cols) % total;
+    if (e.code === "ArrowUp") selectedInventoryIndex = (selectedInventoryIndex - cols + total) % total;
+  
+    return;
   }
 
   // Spillkontroller (uten repeat)
@@ -360,9 +439,7 @@ function updatePlayer() {
   // Oppdater retning
   if (player.xSpeed > 0) player.direction = "right";
   else if (player.xSpeed < 0) player.direction = "left";
-  if (player.attacking) {
-    player.state = "attack";
-  } else if (!player.grounded) {
+  if (!player.grounded) {
     player.state = "jump";
   } else if (player.xSpeed !== 0) {
     player.state = "run";
@@ -403,45 +480,10 @@ function updatePlayer() {
           player.x = 0; // ikke tillat å gå utenfor første nivå
       }
   }
-
-  if (player.attacking) {
-    const hitbox = {
-      x: player.direction === "right" ? player.x + player.width : player.x - 30,
-      y: player.y + 10,
-      width: 30,
-      height: player.height - 20
-    };
   
-    for (const enemy of enemies) {
-      if (
-        enemy.alive &&
-        isColliding(hitbox, enemy) &&
-        !player.hitEnemies.includes(enemy)
-      ) {
-        enemy.health -= player.attackPower;
-        player.hitEnemies.push(enemy); // registrer at denne er truffet
-
-        hitSound.currentTime = 0; // Hit Sound
-        hitSound.play();
-  
-        if (enemy.health <= 0) {
-          enemy.alive = false;
-        }
-      }
-    }
-  }
-  
-
   // Regenerer stamina gradvis
   player.stamina += player.staminaRegenRate;
   if (player.stamina > player.maxStamina) player.stamina = player.maxStamina;
-
-  if (player.attacking) {
-    player.attackTimer--;
-    if (player.attackTimer <= 0) {
-      player.attacking = false;
-    }
-  }
 
 }
 
@@ -551,6 +593,35 @@ function handleGamepadInput() {
 
   const buttons = gamepad.buttons.map(b => b.pressed);
 
+  // 📦 Inventory-lås (åpne/lukk med trekant)
+  if (inventoryActive) {
+    const trianglePressed = buttons[3] && !prevGamepadButtons[3];
+    if (trianglePressed) inventoryActive = false;
+
+    const up = buttons[12] && !prevGamepadButtons[12];
+    const down = buttons[13] && !prevGamepadButtons[13];
+    const left = buttons[14] && !prevGamepadButtons[14];
+    const right = buttons[15] && !prevGamepadButtons[15];
+    const select = buttons[0] && !prevGamepadButtons[0]; // X
+    const back = buttons[1] && !prevGamepadButtons[1];   // O
+  
+    const cols = 6;
+    const total = playerInventory.length;
+  
+    if (!itemInfoActive) {
+      if (right) selectedInventoryIndex = (selectedInventoryIndex + 1) % total;
+      if (left) selectedInventoryIndex = (selectedInventoryIndex - 1 + total) % total;
+      if (down) selectedInventoryIndex = (selectedInventoryIndex + cols) % total;
+      if (up) selectedInventoryIndex = (selectedInventoryIndex - cols + total) % total;
+      if (select) itemInfoActive = true; // Åpne info
+    } else {
+      if (back) itemInfoActive = false; // Lukk info
+    }
+
+    prevGamepadButtons = buttons;
+    return; // 🚫 Blokker all annen input
+  }
+
   const threshold = 0.2;
   const horizontal = gamepad.axes[0]; // Venstre analog
   const jumpPressed = buttons[0] && !prevGamepadButtons[0]; // Cross (X)
@@ -562,30 +633,21 @@ function handleGamepadInput() {
     player.ySpeed = jumpForce;
     player.grounded = false;
   }
-  const attackPressed = buttons[2] && !prevGamepadButtons[2];
-  if (attackPressed && !player.attacking && player.stamina >= 10) {
-    player.attacking = true;
-    attackSound.currentTime = 0; // start fra begynnelsen
-    attackSound.play();
-    player.attackTimer = 10;
-    player.stamina -= 10;
-    player.hitEnemies = [];
-  
-    // Tillat at alle fiender kan bli truffet igjen
-    for (const enemy of enemies) {
-      enemy.recentlyHit = false;
-    }
+
+  // Inventory åpen/lukk
+  const inventoryPressed = buttons[3] && !prevGamepadButtons[3];
+  if (inventoryPressed) {
+    inventoryActive = true;
+    selectedInventoryIndex = 0;
   }
 
-  // Start/Options-knapp åpner/lukker menyen
+  // Meny
   const startPressed = buttons[9] && !prevGamepadButtons[9];
-
   if (startPressed) {
-    menuActive = !menuActive; // Veksler menyen av/på
+    menuActive = !menuActive;
     if (menuActive) selectedOption = 0;
   }
 
-  // Naviger meny
   if (menuActive) {
     const up = buttons[12] && !prevGamepadButtons[12];
     const down = buttons[13] && !prevGamepadButtons[13];
@@ -593,12 +655,11 @@ function handleGamepadInput() {
     if (select) activateMenuOption(selectedOption);
     if (up) selectedOption = (selectedOption - 1 + menuOptions.length) % menuOptions.length;
     if (down) selectedOption = (selectedOption + 1) % menuOptions.length;
-    
   }
 
   prevGamepadButtons = buttons;
-
 }
+
 
 function loadLevel(index) {
     currentLevelIndex = index;
@@ -618,6 +679,15 @@ function gameLoop() {
 
   handleGamepadInput();
 
+  if (inventoryActive) {
+    drawInventory();
+    if (itemInfoActive) {
+      drawItemInfo();
+    }
+    requestAnimationFrame(gameLoop);
+    return;
+  }
+
   if (menuActive) {
     drawMenu();
   } else {
@@ -631,8 +701,6 @@ function gameLoop() {
     updatePlayer();
     drawBackground();
     drawLevel();
-    updateEnemies();
-    drawEnemies();
     drawPlayer();
     drawPlayerBars();
   }
